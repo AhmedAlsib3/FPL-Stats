@@ -1,0 +1,401 @@
+---
+title: "Final Project"
+author: "Ahmed Alsaba"
+output: html_document
+---
+
+Among European soccer competitions, the Premier League in England is the most watched soccer league globally. This is in part due to its highly competitive nature in which any of the 20 teams can defeat the other in a given week. This also makes the Fantasy Premier League (FPL) equally exciting since its not always easy to predict the outcome of a match. The aim of this report is to explore how FPL data can be leveraged to give FPL players (also known as managers) a competitive advantage.
+
+
+### Load Packages ---------------------------------------------------------------------------------------------------
+
+```{r, message=FALSE}
+library(tidyverse)
+library(knitr)
+library(plotly)
+library(DT)
+```
+
+The selected data set is sourced from a [Git repository](https://github.com/vaastav/Fantasy-Premier-League) managed by FPL enthusiasts. It consists of performance data for each player in the game on a weekly basis.
+
+### Import Data -----------------------------------------------------------------------------------------------------
+
+```{r, results='hide'}
+fpl.df <- read.csv(
+  "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data/2021-22/gws/merged_gw.csv",
+           encoding = 'UTF-8')
+
+#If import from Git fails or prose below doesn't fit visualizations, un-comment line below
+#fpl.df <- read.csv("merged_gw.csv", encoding = 'UTF-8')
+
+colnames(fpl.df)
+```
+Each row in the data set reflects a player's current data for that given game week. This includes the player's stats, current value on the transfer market and details of their respective fixture.
+
+Here is a full list of the variables contained in the data set and their definitions:
+  
+### Player details
+  - name : Player name
+  - position : Player position (GK: Goalkeeper, DEF: Defender, MID: Midfielder, FWD: Forward)
+  - team : Team
+  - minutes : minutes played by player in match
+  - total_points : Total number of points earned by player in game week
+  - value : cost to transfer in player in current game week
+  - transfers_in : # of FPL managers that transferred the player in
+  - transfers_out : # of FPL managers that transferred the player out
+  - transfers_balance : Net transfers in-out
+  - xP : Expected Points
+  - assists : # of assists
+  - bonus : Bonus points achieved this week
+  - bps : Total bonus points accrued this season
+  - clean_sheets : # of clean sheets
+  - saves : # of saves made by GK
+  - selected : # of FPL managers that selected the player in the respective game week
+  - yellow_cards : # of yellow cards received
+  - red_cards : # of red cards received
+  - penalties_missed : # of penalties missed by player
+  - penalties_saved : # of penalties saved by GK
+  - own_goals : # of own goals scored by player in game week
+  - element : UNKNOWN
+  - fixture : UNKNOWN
+  - goals_conceded : # goals conceded by player in game week
+  - goals_scored : # of goals scored 
+  - ict_index : ICT (Influence, Creativity & Threat), statistical index used by FPL game to rank players - [more info](https://www.premierleague.com/news/65567)
+  - influence : Influence score (ICT index component)
+  - creativity : Creativity score (ICT index component)
+  - threat : Threat score (ICT index component)
+
+ 
+  
+### Fixture details
+  - GW : Game week, refers to fixtures played in pre-defined periods
+  - kickoff_time : Match start time
+  - opponent_team : Opponent team name
+  - round : UNKNOWN
+  - team_a_score : Goals scored by away team in respective fixture
+  - team_h_score : Goals scored by home team in respective fixture
+  - was_home : "True" if player played game at home, otherwise "False"
+  
+  
+### Clean Data ------------------------------------------------------------------------------------------------------
+After reading in the data, I noticed there were some variables such as "round" and "element" which I was unsure of. The data set didn't come with a dictionary of variables and I'm confident I defined the other variables correctly. Therefore my next step was to exclude these unknowns from the data along with other features that are likely irrelevant to player analysis.
+
+The opponent team variable contained numbers so it's values needed to be matched with the corresponding team names. Moreover, in the game, player values (prices) are denoted in tenths so the value variable had to be mutated to reflect this.
+
+Lastly, the data set was missing the selected % variable, so I mutated this as well. This variable refers to the percentage of managers selected a player during a particular game week. I also checked for missing values and verified the data is complete without NAs.
+```{r}
+#Drop columns
+fpl.tbl <- select(fpl.df, -c(kickoff_time, element, fixture, round))
+
+# Change factor level names
+fpl.tbl <- fpl.tbl %>% 
+  mutate(opponent_team = recode_factor(opponent_team, 
+                                       `1` = "Arsenal", 
+                                       `2` = "Aston Villa",
+                                       `3` = "Brentford", 
+                                       `4` = "Brighton", 
+                                       `5` = "Burnley", 
+                                       `6` = "Chelsea",
+                                       `7` = "Crystal Palace",
+                                       `8` = "Everton", 
+                                       `9` = "Leeds Utd",
+                                       `10` = "Leicester", 
+                                       `11` = "Liverpool", 
+                                       `12` = "Man City",
+                                       `13` = "Man Utd", 
+                                       `14` = "Newcastle", 
+                                       `15` = "Norwich", 
+                                       `16` = "Southampton",
+                                       `17` = "Spurs",
+                                       `18` = "Watford", 
+                                       `19` = "West Ham",
+                                       `20` = "Wolves",))
+
+# Change player value to match values in game
+fpl.tbl <- fpl.tbl %>% 
+  mutate(value = value / 10)
+
+#Create selected % variable (9m players)
+fpl.tbl <- fpl.tbl %>% 
+  mutate(selected_pc = round(100*(selected / 9000000), 2))
+
+#Check for missing values
+sum(is.na(fpl.df))
+```
+
+
+### Top performers of the last game week `r max(fpl.tbl$GW)`
+
+```{r, results = 'asis', echo = FALSE}
+top.players <- fpl.tbl %>% 
+  group_by(name, position, team, value, total_points, goals_scored, assists, selected_pc, clean_sheets, GW) %>% 
+  filter(total_points >= 10, GW == max(fpl.tbl$GW)) %>% 
+  summarize() %>% 
+arrange(desc(total_points))
+
+kable(top.players, format = "markdown")
+```
+This is a list of the players who scored 10 points or higher in the last game week which is considered to be excellent returns for FPL managers. On first glance, we notice that there is distinguishable variance between player values. These values represent the price of the player for a given game week and will fluctuate throughout the season based on how many managers have transferred that player in/out. In basic terms: the more popular a player, the higher the price a manager will have to pay to transfer them in.
+
+```{r, include = FALSE}
+#Arrange top.players df by value, then total_points and return first observation
+ example.1 <- arrange(top.players, 
+          value, desc(total_points))[1,]
+          
+example.1
+```
+
+At the start of each season, managers will choose a squad of 15 players from a pool of 590 players. Managers can select up to 3 players from one team and a budget of 100m. Your team's overall rank is determined by the total number of points your squad accumulated over the course of the season. Naturally, most managers will choose the best players from the top teams in the league for their reliability in delivering points every week. However this also means that managers will likely have very similar teams, so managers will sometimes gamble on transferring in alternate players that can outscore the mainstream pick. This is what FPL managers call a differential.
+
+For example, last game week `r example.1$name` delivered excellent returns with `r example.1$goals_scored` goal(s) and `r example.1$assists` assist(s) and `r example.1$clean_sheets` clean sheet(s) for a total of `r example.1$total_points` points making him a good differential. Therefore, investing in low-value, high potential players early is a popular strategy among FPL managers - everyone is always looking for the next hidden gem.
+
+Taking that into consideration, it would be interesting to explore the relationship between the total points scored by a player and other variables to see if there are any useful indicators.
+
+
+Let's continue with the `r example.1$name` example and compare him against other players in the same position.
+
+### Findings ------------------------------------------------------------------------------------------------------
+
+NOTE: Rescheduled fixtures can sometimes lead to double game weeks where certain teams may play two matches instead of one in a single game week. Adding double game week players in the squad is a favorable strategy for FPL managers since they have the potential for a higher points output.
+
+
+### Player form analysis
+```{r, echo = FALSE}
+#Create dataframe of average total_points total for players in the same 'position' as example.1
+comparison.df <- fpl.tbl %>% 
+  group_by(GW, position) %>% 
+  filter(position == example.1$position, minutes >= 45) %>% 
+  summarise_at(vars(total_points), list(avg_total_points = mean))
+
+#Create plot of average total points for selected position
+comparison.plot <-  ggplot(comparison.df, aes(GW, avg_total_points)) +
+           geom_col()
+
+#Example players total points week by week all season
+example.df <- fpl.tbl %>% 
+  filter(name == example.1$name, minutes >= 45)
+
+#Average total_points for player in same position as example player
+example.plot <- ggplot(example.df, aes(GW, total_points), show.legend = TRUE) +
+         geom_col(data = comparison.df, aes(x=GW, y=avg_total_points, fill=GW)) + geom_line(colour='Yellow3')  +
+          labs(x = "Game week", y = "Total Points", 
+          title =  paste(example.1$name, "vs other", example.1$position,"s")) 
+
+ggplotly(example.plot)
+```
+```{r, include=FALSE}
+comparison.1 <- filter(comparison.df, GW == max(fpl.tbl$GW)) 
+ 
+net.points <- round(example.1["total_points"] - comparison.1["avg_total_points"], 2) 
+
+example.mean <- filter(fpl.tbl, name == example.1$name)
+
+```
+
+
+For the purpose of comparison, I omitted players who've played less than 45 minutes in a game week to get a fair average of the total points in the `r example.1$position` position. Last game week `r example.1$name` outperformed the average by `r net.points` points and his points total of `r example.1$total_points` is `r round(example.1$total_points / mean(example.mean$total_points),1)`x his average of `r round(mean(example.mean$total_points))` points this season. Given his current form, he might be a cheap differential for managers to consider adding to their squads.
+
+Expanding on this, I was also curious about how the total points spread looks among the different player positions. This would give insight into how a manager might allocate their budget when planning their squad selections.
+```{r, echo = FALSE}
+#Group players by points total this season
+fpl.tbl.total <-  fpl.tbl %>% 
+                    group_by(name, position) %>% 
+                    summarize(total_points = sum(total_points))
+
+positions.plt1 <- filter(fpl.tbl.total, total_points != 0)
+plot_ly(positions.plt1, x = ~position, y = ~total_points, color = ~position, type = "box") %>% 
+  layout(yaxis = list(type = "log")) %>% 
+  layout(title="Total points accumulated this Season in each position")
+                      
+```
+
+The box plots above reveal some useful insights. Goalkeepers have the highest median of the four positions, the other positions appear to have comparable medians. This makes sense with respect to the game, because most outfield players will play two halves of a game, earning a point for each half and not score any additional points.
+
+I also noticed that the box plots are all negatively skewed, some more than others. For instance, half of the forwards scored between 1 point and 36.5 points this season, while the other half scored between 36.5 and 110. This indicates that most forwards score well below the median, therefore a FPL manager would be encouraged to focus their budget on other positions such as midfielders and defenders.
+
+
+What interested me the most, is that the box plot for defenders. It has the highest median (37) of all outfield positions. This is likely due to there being two different types of defenders in soccer: center backs and full backs. In most teams, center backs will typically remain in a defensive position throughout the match earning their managers points by earning clean sheets (not conceding goals or yellow/red cards). Meanwhile, full backs are likely join attacks and can earn points for not only clean sheets, but assists and goals too.
+
+
+```{r, include=FALSE}
+#I attempted to investigate further to see if there was any relationship between attacking and defending defenders. However, I couldn't separate the two since there is no distinguishable variable in the data set.
+
+#Update tibble to include attacking and defensive actions
+fpl.tbl.total <-  fpl.tbl %>% 
+                    group_by(name, position) %>% 
+                    summarize(total_points = sum(total_points), 
+                              goals_scored = sum(goals_scored),
+                              assists = sum(assists),
+                              clean_sheets = sum(clean_sheets),
+                              goals_conceded = sum(goals_conceded),
+                              yellow_cards = sum(yellow_cards),
+                              red_cards = sum(red_cards),
+                              median_value = median(value),
+                              median_selected_pc = median(selected_pc))
+                              
+#Create new data frame for defenders
+defenders <- fpl.tbl.total %>%
+              filter(position == "DEF")
+
+#Create data frame for attacking defenders based on Goals/Assists 
+atk.defenders <- defenders %>% 
+                  filter(goals_scored > 0 | assists > 0) %>% 
+                  group_by(name) %>% 
+                  summarize(median_selected_pc, median_value, total_points)
+
+
+#Create df for defending defenders based on clean sheets
+def.defenders <- defenders %>% 
+                  filter(clean_sheets > 0) %>% 
+                  summarize(median_selected_pc, median_value, total_points)
+
+
+atk.returns <- ggplotly(ggplot(atk.defenders, aes(x=median_selected_pc,
+                      y=median_value, size = total_points, label = name)) + 
+                      geom_point(alpha=0.5) + 
+                      scale_size(range =c(.1, 10)) + 
+                      geom_smooth() +
+                      labs(x = "Median Selected %", y = "Median Value", 
+                           title = "Attacking defenders vs Defending defenders")) %>% 
+                          #Subplot title
+                          add_annotations(
+                          text = "Attacking Defenders",
+                          x = 0,
+                          y = 1,
+                          yref = "paper",
+                          xref = "paper",
+                          xanchor = "left",
+                          yanchor = "top",
+                          yshift = 20,
+                          showarrow = FALSE,
+                          font = list(size = 15))
+
+
+def.returns <- ggplotly(ggplot(def.defenders, aes(x=median_selected_pc, y=median_value, size = total_points, label = name)) +
+                      geom_point(alpha=0.7) +
+                      scale_size(range =c(.1, 10)) +
+                      geom_smooth()+
+                      labs(x = "Median Selected %", y = "Median Value")) %>% 
+                      add_annotations(
+                      text = "Defending Defenders",
+                      x = 0,
+                      y = 1,
+                      yref = "paper",
+                      xref = "paper",
+                      xanchor = "left",
+                      yanchor = "top",
+                      yshift = 20,
+                      showarrow = FALSE,
+                      font = list(size = 15)
+    )
+
+#Display both plots
+subplot(list(atk.returns, def.returns))
+```
+I was also interested in how FPL managers shift their budget around week to week. The following visualization plots player value against the number of managers that transferred that player into their team. I examined the last 6 game weeks to see if I could spot any patterns.
+
+```{r, fig.width=15, fig.height=15, echo = FALSE}
+#Filter data by last 5 GWs
+last.6GW <- fpl.tbl %>% 
+  filter(fpl.tbl$GW >= 24 & fpl.tbl$GW <=29)
+
+  #Manually highlight individual data point (Bukayo Saka)
+                      # filter dataframe to get data to be highlighted
+                      highlight_df <- last.6GW %>% 
+                                   filter(name %in% c("Bukayo Saka", "Philippe Coutinho Correia"))
+
+val.trn.plt <- ggplot(last.6GW) + aes(selected_pc, value, colour=position, alpha = 0.5, label = name) +
+                      geom_point(aes(shape = position), show.legend = TRUE) + 
+                      scale_shape_manual(values=c(15, 16, 17, 18)) +
+                      facet_wrap("GW") +
+                      labs(x = "Selected by % of Managers", y = "Player Value", title = "Player Value vs No. of Transfers in")+                       theme(legend.position = "bottom") +
+                      #Set x-axis to percent format
+                      scale_x_continuous(labels = scales::percent_format(scale = 1)) +
+                      #Add highlighted points
+                      geom_point(data=highlight_df, 
+                       aes(x=selected_pc,y=value), 
+                       color='red',
+                       size=3)
+                      
+
+
+
+
+ggplotly(val.trn.plt)
+```
+There are a few outliers. For example, Bukayo Saka was a very popular pick in GW 26 with 784,691 transfers in. He is not visible in any of the previous game weeks' plots so we can infer that the high number of transfers is due to favorable fixtures rather than form. By comparison, Philippe Coutinho was also heavily transferred in during GW 23 and again in 25, this time with a price increase. His observation's movement is more likely explained by form as confirmed by the table below. But perhaps there are other variables at play here that influence a manager's decision to bring a player in.
+
+```{r, echo=FALSE}
+Saka <- last.6GW %>%
+          filter(name == "Bukayo Saka") %>%
+          summarise(GW, name, position, goals_scored, assists, clean_sheets, total_points, bonus)
+        
+Coutinho <- last.6GW %>% 
+          filter(name == "Philippe Coutinho Correia") %>% 
+          summarise(GW, name, position, goals_scored, assists, clean_sheets, total_points, bonus)
+
+Saka.Coutinho <- rbind(Saka, Coutinho)
+
+kable(Saka.Coutinho, format = "markdown")
+```
+
+
+To get a better idea of the importance of the variables in the data, I ran a linear regression analysis. I set the target variable as 'total_points' and all else as predictor variables. I then removed a variable that wasn't statistically significant and recalculated the model, repeating these steps until all my variables were statistically significant at the 5% level (i.e. the predictor's respective p-value is less than 0.05).
+
+```{r}
+options(scipen=4)
+fpl.lm <- lm(total_points ~ .-name-team-opponent_team-position-was_home-selected-team_h_score-selected_pc-transfers_in-transfers_out-GW-team_a_score-value, data = fpl.tbl)
+
+fpl.lm.summary <- coef(summary(fpl.lm))
+
+#Show only statistically significant factors and sort Estimate in descending order
+#fpl.lm.summary <- fpl.lm.summary[fpl.lm.summary[,"Pr(>|t|)"]<0.05,]
+e <- order(fpl.lm.summary[,1], decreasing = TRUE)
+
+fpl.lm.summary <- fpl.lm.summary[e, ]
+
+fpl.lm.summary
+
+```
+After running the regression analysis, I excluded variables that weren't staistically significant at the 5% level. The output above ranks the remaining coefficients in order of their impact on total points scored for a player in a given game week. Penalties saved tops the list as the most influential factor with an average of `r round(fpl.lm.summary[1,1],2)` points earned for every penalty saved. However, this stat applies only to goalkeepers so it shouldn't be considered when analyzing outfield players.
+
+Goals scored, assists and clean sheets are also key variables that influence total points but this expected since the game rewards players the most points for these actions. For instance, holding all other variables constant, every goal scored earns on average `r round(fpl.lm.summary[2,1],2)` points. Although the model fits, the results are not very useful.
+
+```{r, echo = FALSE}
+par(mfrow = c(2,2))
+plot(fpl.lm)
+```
+
+
+After fitting my data to the linear regression model, I created a diagnostic plot to confirm this model is appropriate for the data set. In the Residuals vs Fitted plot, the regression line deviates slightly but is roughly horizontal so the residuals follow a almost linear pattern.
+
+Looking at the Q-Q (Quantile-Quantile plot), we find that the distribution is over-dispersed. This is indicates that we have a high number of outliers and the tails of the distribution are fatter. Although, we could already sense from the box plots that the data is not normally distributed.
+
+With respect to the Scale-Location plot, the regression line is roughly horizontal and there is no visible pattern among residuals.This is indicating that the variance among residuals is equal at all fitted values, therefore the model fits well.
+
+Finally, the Residuals vs Leverage plot tells us that there are not overly influential points in the data set. Observation 4500 is the closest to the border of Cook's distance but not beyond the point it would be considered influential.
+
+### Collinearity Diagnosis
+```{r, echo = FALSE}
+fpl.var.names <- c("penalties_saved", "goals_scored", "assists", "clean_sheets", "saves", "goals_conceded", "yellow_cards", "red_cards", "minutes", "total_points")
+
+# Function taken from ?pairs Example section.  
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = pmax(1, cex.cor * r))
+}
+
+pairs(fpl.tbl[,fpl.var.names], lower.panel = panel.cor)
+```
+
+### Discussion ------------------------------------------------------------------------------------------------------
+
+In conclusion, my analysis has determined that investing in midfielders and attacking defenders is probably the most useful strategy. However some seasoned FPL managers might argue that this is likely the case in the current season this report was produced (2021/22). Although the analysis didn't uncover any ground-breaking insights, it definitely exposed the limitations of the data set. Running a linear regression with the current set of variables is compromised by collinearity between the  total points and actions that award points such as goals and assists.
+
+If I were to repeat this study in the future, I would pair this data with a secondary data set consisting of players' underlying stats. This can include features such as the number of interceptions a defender makes per game or the number of touches a forward takes in the final third. These variables are more closely tied to player performance, so a more granular approach would likely yield more useful results.
