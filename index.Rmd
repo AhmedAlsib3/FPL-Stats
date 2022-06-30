@@ -294,7 +294,7 @@ subplot(list(atk.returns, def.returns))
 ```
 I was also interested in how FPL managers shift their budget around week to week. The following visualization plots player value against the number of managers that transferred that player into their team. I examined the last 6 game weeks to see if I could spot any patterns.
 
-```{r, fig.width=15, fig.height=15, echo = FALSE}
+```{r, fig.width=10, fig.height=10, echo = FALSE}
 #Filter data by last 5 GWs
 last.6GW <- fpl.tbl %>% 
   filter(fpl.tbl$GW >= 24 & fpl.tbl$GW <=29)
