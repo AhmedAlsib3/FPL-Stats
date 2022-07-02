@@ -1,5 +1,5 @@
 ---
-title: "Final Project"
+title: "Statistical Analysis: Fantasy Premier League 2021-22"
 author: "Ahmed Alsaba"
 output: html_document
 ---
